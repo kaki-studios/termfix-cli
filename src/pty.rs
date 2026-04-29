@@ -1,10 +1,12 @@
-use anyhow::Result;
-
+use std::sync::Arc;
 
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::{self, Read, Write};
+use std::sync::Mutex;
 use std::thread;
+
+use crate::context::ShellContext;
 struct RawModeGuard;
 
 impl RawModeGuard {
@@ -20,7 +22,12 @@ impl Drop for RawModeGuard {
     }
 }
 
-pub fn shell(rows: u16, cols: u16, shell: &str) -> anyhow::Result<()> {
+pub fn shell(
+    rows: u16,
+    cols: u16,
+    shell: &str,
+    shell_ctx: Arc<Mutex<ShellContext>>,
+) -> anyhow::Result<()> {
 
     let pty_system = NativePtySystem::default();
     let pair = pty_system.openpty(PtySize {
@@ -39,6 +46,7 @@ pub fn shell(rows: u16, cols: u16, shell: &str) -> anyhow::Result<()> {
     let mut writer = pair.master.take_writer()?;
 
     let _raw_mode = RawModeGuard::new()?;
+    let copied_ctx = Arc::clone(&shell_ctx);
 
     let output_thread = thread::spawn(move || -> io::Result<()> {
         let mut stdout = io::stdout();
@@ -48,6 +56,14 @@ pub fn shell(rows: u16, cols: u16, shell: &str) -> anyhow::Result<()> {
             let n = reader.read(&mut buffer)?;
             if n == 0 {
                 break;
+            }
+
+
+
+            if let Ok(command) = std::str::from_utf8(&buffer[..n]) {
+                if let Ok(mut context) = copied_ctx.lock() {
+                    context.push_output(command);
+                }
             }
 
             stdout.write_all(&buffer[..n])?;
@@ -67,6 +83,8 @@ pub fn shell(rows: u16, cols: u16, shell: &str) -> anyhow::Result<()> {
                 break;
             }
 
+            //we can't write this directly to the context since we'd have to handle escape codes,
+            //backspaces, etc.
             writer.write_all(&buffer[..n])?;
             writer.flush()?;
         }
