@@ -1,3 +1,5 @@
 - [X] Capture commands and their outputs
-    - [ ] Document the pipeline
+    - [X] Document the pipeline
+- [ ] Implement the termfix command
+- [ ] Move runtime parsing logic away from pty.rs
 - [ ] Send output to api and make `termfix fix` work etc.

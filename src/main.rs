@@ -6,6 +6,9 @@ use anyhow::anyhow;
 use crossterm::terminal::size;
 use libghostty_vt::Terminal;
 use libghostty_vt::TerminalOptions;
+use std::env::args;
+use std::os;
+use std::process::exit;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -14,10 +17,39 @@ use crate::context::ShellContext;
 mod context;
 mod pty;
 mod parser;
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+pub struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+pub enum Commands {
+    Start {},
+    Status {},
+}
 
 fn main() -> Result<()> {
     //TODO the main fn should be responsible for setting up env vars, loading configs
     //and making a buffer for the context for the LLM.
+    let cli = Cli::parse();
+match &cli.command {
+        Some(Commands::Start {  }) => {},
+        Some(Commands::Status {  }) => {
+            println!("inactive");
+            println!("Use \"termfix start\" to activate");
+            exit(0)
+        },
+        _ => {
+            eprintln!("Error");
+            exit(1);
+        },
+    }
+
+
     let context = ShellContext::new();
     let context_arc = Arc::new(Mutex::new(context));
     let (cols, rows) = size().unwrap_or((80, 24));

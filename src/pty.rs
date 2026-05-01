@@ -1,16 +1,18 @@
 use std::sync::Arc;
 
+use clap::Parser;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::{self, Read, Write};
 use std::sync::Mutex;
-use std::thread;
+use std::{env, thread};
 
+use crate::Commands;
 use crate::context::ShellContext;
 struct RawModeGuard;
 const PROMPT_START_SEQ: &[u8] = b"\x1b]7;";
 const COMMAND_END_MARKER: &[u8] = b"\n-----COMMAND END------\n";
-const CUSTOM_COMMAND_BOOTSTRAP: &[u8] = b"termfix_cmd() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\nalias :tf='termfix_cmd'\nclear\necho \"Welcome to TermFix\"\n";
+const CUSTOM_COMMAND_BOOTSTRAP: &[u8] = b"termfix() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\nclear\n";
 
 impl RawModeGuard {
     fn new() -> io::Result<Self> {
@@ -110,10 +112,25 @@ fn strip_clear_sequences_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> 
 }
 
 fn handle_termfix_command(command: &str) -> Vec<u8> {
-    match command.trim() {
-        "ping" => b"pong\n".to_vec(),
-        other => format!("termfix: unknown command '{other}'\n").into_bytes(),
+    //points to current executable, prob just should do ""
+    let mut vec = vec![env::args().into_iter().next().unwrap_or("".to_string())];
+    vec.extend(command.split_whitespace().map(|e|e.to_string()));
+
+    //TODO don't exit if arg not present, otherwise termfix exits the pty, check clap docs
+    let cli = crate::Cli::parse_from(vec);
+    // return format!("{:?}", command.split_whitespace()).bytes().collect();
+    match &cli.command {
+        Some(Commands::Start {  }) => {b"already active\r\n".to_vec()},
+        Some(Commands::Status {  }) => {
+            b"active\r\n".to_vec()
+        },
+        _ => {
+            b"Error\r\n".to_vec()
+        },
+
     }
+    
+
 }
 
 fn process_termfix_commands_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> {
@@ -196,6 +213,7 @@ pub fn shell(
 
     let _raw_mode = RawModeGuard::new()?;
     let copied_ctx = Arc::clone(&shell_ctx);
+
 
     let output_thread = thread::spawn(move || -> io::Result<()> {
         let mut stdout = io::stdout();
@@ -288,7 +306,7 @@ pub fn shell(
     // The input thread can still be blocked on stdin. Detach by dropping it.
     drop(input_thread);
 
-    println!("\r\nShell exited with status: {status:?}");
+    print!("Shell exited with status: {status:?}\r\n");
 
     Ok(())
 }
