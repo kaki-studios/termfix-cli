@@ -1,6 +1,6 @@
-use libghostty_vt::fmt::{Format, Formatter, FormatterOptions};
-use libghostty_vt::Terminal;
 use anyhow::Result;
+use libghostty_vt::Terminal;
+use libghostty_vt::fmt::{Format, Formatter, FormatterOptions};
 
 fn strip_legacy_title_sequences(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
@@ -27,7 +27,6 @@ fn strip_legacy_title_sequences(input: &[u8]) -> Vec<u8> {
 
     out
 }
-
 
 pub fn parse(input: Vec<u8>, terminal: &mut Terminal) -> Result<String> {
     let cleaned = strip_legacy_title_sequences(&input);

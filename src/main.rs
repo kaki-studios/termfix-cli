@@ -15,8 +15,8 @@ use std::sync::Mutex;
 use crate::context::ShellContext;
 
 mod context;
-mod pty;
 mod parser;
+mod pty;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -28,34 +28,38 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Start {},
-    Status {},
+    Start,
+    Status,
+    Context,
 }
 
 fn main() -> Result<()> {
     //TODO the main fn should be responsible for setting up env vars, loading configs
     //and making a buffer for the context for the LLM.
     let cli = Cli::parse();
-match &cli.command {
-        Some(Commands::Start {  }) => {},
-        Some(Commands::Status {  }) => {
+    match &cli.command {
+        Some(Commands::Start {}) => {}
+        Some(Commands::Status {}) => {
             println!("inactive");
             println!("Use \"termfix start\" to activate");
             exit(0)
-        },
-        _ => {
+        }
+        Some(Commands::Context) => {
+            println!("Termfix is inactive, no available context.");
+            println!("Use \"termfix start\" to activate");
+            exit(0);
+        }
+        None => {
             eprintln!("Error");
             exit(1);
-        },
+        }
     }
-
 
     let context = ShellContext::new();
     let context_arc = Arc::new(Mutex::new(context));
     let (cols, rows) = size().unwrap_or((80, 24));
 
     pty::shell(rows, cols, &std::env::var("SHELL")?, context_arc.clone())?;
-
 
     //To parse ansi escape sequences, we need to emulate the whole shell session again...
     let mut terminal = Terminal::new(TerminalOptions {
@@ -64,13 +68,13 @@ match &cli.command {
         max_scrollback: 10_000,
     })?;
 
-    let out = parser::parse(context_arc
+    let out = parser::parse(
+        context_arc
             .lock()
             .map_err(|_| anyhow!("couldn't get the lock"))?
-            .get_raw_context(), &mut terminal)?;
-    std::fs::write(
-        "./logs/clean.log",
-        out,
+            .get_raw_context(),
+        &mut terminal,
     )?;
+    std::fs::write("./logs/clean.log", out)?;
     Ok(())
 }

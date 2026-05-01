@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
+use crate::parser;
+use anyhow::Result;
 use clap::Parser;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use libghostty_vt::{Terminal, TerminalOptions};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::{self, Read, Write};
 use std::sync::Mutex;
@@ -12,7 +15,8 @@ use crate::context::ShellContext;
 struct RawModeGuard;
 const PROMPT_START_SEQ: &[u8] = b"\x1b]7;";
 const COMMAND_END_MARKER: &[u8] = b"\n-----COMMAND END------\n";
-const CUSTOM_COMMAND_BOOTSTRAP: &[u8] = b"termfix() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\nclear\n";
+const CUSTOM_COMMAND_BOOTSTRAP: &[u8] =
+    b"termfix() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\nclear\n";
 
 impl RawModeGuard {
     fn new() -> io::Result<Self> {
@@ -111,29 +115,39 @@ fn strip_clear_sequences_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> 
     out
 }
 
-fn handle_termfix_command(command: &str) -> Vec<u8> {
+fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Result<Vec<u8>> {
     //points to current executable, prob just should do ""
     let mut vec = vec![env::args().into_iter().next().unwrap_or("".to_string())];
-    vec.extend(command.split_whitespace().map(|e|e.to_string()));
+    vec.extend(command.split_whitespace().map(|e| e.to_string()));
 
     //TODO don't exit if arg not present, otherwise termfix exits the pty, check clap docs
     let cli = crate::Cli::parse_from(vec);
     // return format!("{:?}", command.split_whitespace()).bytes().collect();
     match &cli.command {
-        Some(Commands::Start {  }) => {b"already active\r\n".to_vec()},
-        Some(Commands::Status {  }) => {
-            b"active\r\n".to_vec()
-        },
-        _ => {
-            b"Error\r\n".to_vec()
-        },
+        Some(Commands::Start {}) => Ok(b"already active\r\n".to_vec()),
+        Some(Commands::Status {}) => Ok(b"active\r\n".to_vec()),
+        Some(Commands::Context) => {
+            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+            //To parse ansi escape sequences, we need to emulate the whole shell session again...
+            let mut terminal = Terminal::new(TerminalOptions {
+                cols,
+                rows,
+                max_scrollback: 10_000,
+            })?;
 
+            let out = parser::parse(context.get_raw_context(), &mut terminal)?;
+            std::fs::write("./logs/clean.log", out)?;
+            Ok(b"Logs written to logs/clean.log\r\n".to_vec())
+        }
+        None => Ok(b"Error\r\n".to_vec()),
     }
-    
-
 }
 
-fn process_termfix_commands_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> {
+fn process_termfix_commands_stream(
+    pending: &mut Vec<u8>,
+    chunk: &[u8],
+    context: &mut ShellContext,
+) -> Result<Vec<u8>> {
     pending.extend_from_slice(chunk);
     let mut out = Vec::with_capacity(chunk.len());
     let mut i = 0usize;
@@ -163,7 +177,7 @@ fn process_termfix_commands_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u
             let body = &pending[seq_start + 2..end_idx];
             if let Some(command) = body.strip_prefix(b"1337;TERMFIX_CMD=") {
                 let command = String::from_utf8_lossy(command);
-                out.extend_from_slice(&handle_termfix_command(&command));
+                out.extend_from_slice(&handle_termfix_command(&command, context)?);
             } else {
                 out.extend_from_slice(&pending[seq_start..end_idx + term_len]);
             }
@@ -179,7 +193,7 @@ fn process_termfix_commands_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u
         pending.drain(0..i);
     }
 
-    out
+    Ok(out)
 }
 
 pub fn shell(
@@ -202,7 +216,6 @@ pub fn shell(
 
     drop(pair.slave);
 
-
     let mut reader = pair.master.try_clone_reader()?;
     let mut writer = pair.master.take_writer()?;
 
@@ -213,7 +226,6 @@ pub fn shell(
 
     let _raw_mode = RawModeGuard::new()?;
     let copied_ctx = Arc::clone(&shell_ctx);
-
 
     let output_thread = thread::spawn(move || -> io::Result<()> {
         let mut stdout = io::stdout();
@@ -229,27 +241,37 @@ pub fn shell(
                 break;
             }
 
-            let transformed = process_termfix_commands_stream(&mut termfix_pending, &buffer[..n]);
-
             if let Ok(mut context) = copied_ctx.lock() {
-                let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
+                let transformed = process_termfix_commands_stream(
+                    &mut termfix_pending,
+                    &buffer[..n],
+                    &mut context,
+                )
+                .map_err(|_| std::io::Error::last_os_error())?;
+                let filtered =
+                    strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
                 push_with_command_markers(
                     &mut context,
                     &mut pending,
                     &filtered,
                     &mut seen_prompt_start,
                 );
+                stdout.write_all(&transformed)?;
+                stdout.flush()?;
+            } else {
+                stdout.write_all(&buffer[..n])?;
+                stdout.flush()?;
             }
-
-            stdout.write_all(&transformed)?;
-            stdout.flush()?;
         }
 
         if let Ok(mut context) = copied_ctx.lock() {
             if !termfix_pending.is_empty() {
-                let transformed = process_termfix_commands_stream(&mut termfix_pending, &[]);
+                let transformed =
+                    process_termfix_commands_stream(&mut termfix_pending, &[], &mut context)
+                        .map_err(|_| std::io::Error::last_os_error())?;
                 if !transformed.is_empty() {
-                    let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
+                    let filtered =
+                        strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
                     push_with_command_markers(
                         &mut context,
                         &mut pending,
@@ -286,7 +308,6 @@ pub fn shell(
             if n == 0 {
                 break;
             }
-
 
             writer.write_all(&buffer[..n])?;
             writer.flush()?;
