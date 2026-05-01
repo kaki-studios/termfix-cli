@@ -1,0 +1,10 @@
+Script started on 2026-05-01 11:19:54+02:00 [TERM="tmux-256color" TTY="/dev/pts/2" COLUMNS="128" LINES="35"]
+%                                                                                                                                k..s/termfix-cli\➜  termfix-cli ➜  termfix-cli git:(main) ✗ cclear
+kclear\%                                                                                                                                k..s/termfix-cli\➜  termfix-cli git:(main) ✗ eech e echo t   e  ttest  t  eecho t4 est
+kecho\test
+%                                                                                                                                k..s/termfix-cli\➜  termfix-cli git:(main) ✗ lls
+kls\Cargo.lock  Cargo.toml  output.best  output.better  output.raw  raw.log  README.md  src  target  TODO.md
+%                                                                                                                                k..s/termfix-cli\➜  termfix-cli git:(main) ✗ cclear
+kclear\%                                                                                                                                k..s/termfix-cli\➜  termfix-cli git:(main) ✗ eexit
+kexit\
+Script done on 2026-05-01 11:20:10+02:00 [COMMAND_EXIT_CODE="0"]

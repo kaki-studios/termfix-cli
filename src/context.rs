@@ -1,12 +1,10 @@
-use std::string;
-use anyhow::anyhow;
 use anyhow::Result;
-
-
+use anyhow::anyhow;
+use std::string;
 
 ///A struct that holds context from the shell (their outputs, can't get input, see pty.rs)
 pub struct ShellContext {
-    raw_context: Vec<String>,
+    raw_context: Vec<u8>,
 }
 
 impl ShellContext {
@@ -16,18 +14,11 @@ impl ShellContext {
         }
     }
 
-    pub fn push_output(&mut self, output: &str) {
-        self.raw_context.push(output.into());
+    pub fn push(&mut self, s: &[u8]) {
+        self.raw_context.extend_from_slice(s);
     }
 
-    pub fn get_context(&self) -> String {
-        std::println!("length: {}", self.raw_context.len());
-        std::println!("vec: {:#?}", self.raw_context);
-        let mut ctx = String::new();
-        for out in &self.raw_context {
-            ctx.push_str(&std::format!("OUTPUT: {}\n", out));
-        }
-        ctx
+    pub fn get_raw_context(&self) -> Vec<u8> {
+        self.raw_context.clone()
     }
-
 }

@@ -1,0 +1,10 @@
+]0;kaarlo@kaarlo-laptop:~[?2004h[kaarlo@kaarlo-laptop ~]$ clear
+[?2004l[H[2J]0;kaarlo@kaarlo-laptop:~[?2004h[kaarlo@kaarlo-laptop ~]$ ls
+[?2004l[0m[01;34mbin[0m        extraclean.log   [01;34mProjects[0m            [01;34mtesting[0m           [01;34myay[0m
+clean.log  [01;34mgo[0m               raw.log             typescript
+[01;34mDocuments[0m  kaizen_prog.txt  stripe              typescript.clean
+[01;34mDownloads[0m  [01;34mPictures[0m         stripe_private_key  [01;34mVideos[0m
+]0;kaarlo@kaarlo-laptop:~[?2004h[kaarlo@kaarlo-laptop ~]$ ex[Kcho test
+[?2004ltest
+]0;kaarlo@kaarlo-laptop:~[?2004h[kaarlo@kaarlo-laptop ~]$ exit
+[?2004lexit

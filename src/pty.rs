@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use nix::sys::termios;
+use nix::sys::termios::SetArg;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::{self, Read, Write};
+use std::os::fd::BorrowedFd;
 use std::sync::Mutex;
 use std::thread;
 
@@ -28,7 +31,6 @@ pub fn shell(
     shell: &str,
     shell_ctx: Arc<Mutex<ShellContext>>,
 ) -> anyhow::Result<()> {
-
     let pty_system = NativePtySystem::default();
     let pair = pty_system.openpty(PtySize {
         rows: rows,
@@ -41,6 +43,7 @@ pub fn shell(
     let mut child = pair.slave.spawn_command(cmd)?;
 
     drop(pair.slave);
+
 
     let mut reader = pair.master.try_clone_reader()?;
     let mut writer = pair.master.take_writer()?;
@@ -58,12 +61,8 @@ pub fn shell(
                 break;
             }
 
-
-
-            if let Ok(command) = std::str::from_utf8(&buffer[..n]) {
-                if let Ok(mut context) = copied_ctx.lock() {
-                    context.push_output(command);
-                }
+            if let Ok(mut context) = copied_ctx.lock() {
+                context.push(&buffer[..n]);
             }
 
             stdout.write_all(&buffer[..n])?;
@@ -83,8 +82,7 @@ pub fn shell(
                 break;
             }
 
-            //we can't write this directly to the context since we'd have to handle escape codes,
-            //backspaces, etc.
+
             writer.write_all(&buffer[..n])?;
             writer.flush()?;
         }
