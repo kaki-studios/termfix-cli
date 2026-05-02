@@ -7,8 +7,8 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use libghostty_vt::{Terminal, TerminalOptions};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::{self, Read, Write};
-use std::sync::Mutex;
 use std::{env, thread};
+use tokio::sync::Mutex;
 
 use crate::Commands;
 use crate::context::ShellContext;
@@ -115,7 +115,7 @@ fn strip_clear_sequences_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> 
     out
 }
 
-fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Result<Vec<u8>> {
+async fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Result<Vec<u8>> {
     //points to current executable, prob just should do ""
     let mut vec = vec![env::args().into_iter().next().unwrap_or("".to_string())];
     vec.extend(command.split_whitespace().map(|e| e.to_string()));
@@ -139,11 +139,30 @@ fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Result<V
             std::fs::write("./logs/clean.log", out)?;
             Ok(b"Logs written to logs/clean.log\r\n".to_vec())
         }
+        Some(Commands::Fix) => {
+            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+            //To parse ansi escape sequences, we need to emulate the whole shell session again...
+            let mut terminal = Terminal::new(TerminalOptions {
+                cols,
+                rows,
+                max_scrollback: 10_000,
+            })?;
+            let out = parser::parse(context.get_raw_context(), &mut terminal)?;
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(format!("{}/api/fix", std::env::var("TERMFIX_API_URL")?))
+                .body(format!("{{\"{}\"}}", out))
+                .header("Authorization", std::env::var("KEY")?)
+                .send()
+                .await?;
+
+            Ok(resp.bytes().await?.into())
+        }
         None => Ok(b"Error\r\n".to_vec()),
     }
 }
 
-fn process_termfix_commands_stream(
+async fn process_termfix_commands_stream(
     pending: &mut Vec<u8>,
     chunk: &[u8],
     context: &mut ShellContext,
@@ -177,7 +196,7 @@ fn process_termfix_commands_stream(
             let body = &pending[seq_start + 2..end_idx];
             if let Some(command) = body.strip_prefix(b"1337;TERMFIX_CMD=") {
                 let command = String::from_utf8_lossy(command);
-                out.extend_from_slice(&handle_termfix_command(&command, context)?);
+                out.extend_from_slice(&handle_termfix_command(&command, context).await?);
             } else {
                 out.extend_from_slice(&pending[seq_start..end_idx + term_len]);
             }
@@ -196,7 +215,7 @@ fn process_termfix_commands_stream(
     Ok(out)
 }
 
-pub fn shell(
+pub async fn shell(
     rows: u16,
     cols: u16,
     shell: &str,
@@ -227,7 +246,7 @@ pub fn shell(
     let _raw_mode = RawModeGuard::new()?;
     let copied_ctx = Arc::clone(&shell_ctx);
 
-    let output_thread = thread::spawn(move || -> io::Result<()> {
+    let output_thread = tokio::spawn(async move || -> io::Result<()> {
         let mut stdout = io::stdout();
         let mut buffer = [0u8; 4096];
         let mut termfix_pending = Vec::new();
@@ -241,13 +260,29 @@ pub fn shell(
                 break;
             }
 
-            if let Ok(mut context) = copied_ctx.lock() {
-                let transformed = process_termfix_commands_stream(
-                    &mut termfix_pending,
-                    &buffer[..n],
-                    &mut context,
-                )
-                .map_err(|_| std::io::Error::last_os_error())?;
+            let mut context = copied_ctx.lock().await;
+            let transformed =
+                process_termfix_commands_stream(&mut termfix_pending, &buffer[..n], &mut context)
+                    .await
+                    .map_err(|_| std::io::Error::last_os_error())?;
+            let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
+            push_with_command_markers(
+                &mut context,
+                &mut pending,
+                &filtered,
+                &mut seen_prompt_start,
+            );
+            stdout.write_all(&transformed)?;
+            stdout.flush()?;
+        }
+
+        let mut context = copied_ctx.lock().await;
+        if !termfix_pending.is_empty() {
+            let transformed =
+                process_termfix_commands_stream(&mut termfix_pending, &[], &mut context)
+                    .await
+                    .map_err(|_| std::io::Error::last_os_error())?;
+            if !transformed.is_empty() {
                 let filtered =
                     strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
                 push_with_command_markers(
@@ -256,48 +291,25 @@ pub fn shell(
                     &filtered,
                     &mut seen_prompt_start,
                 );
-                stdout.write_all(&transformed)?;
-                stdout.flush()?;
-            } else {
-                stdout.write_all(&buffer[..n])?;
-                stdout.flush()?;
             }
         }
-
-        if let Ok(mut context) = copied_ctx.lock() {
-            if !termfix_pending.is_empty() {
-                let transformed =
-                    process_termfix_commands_stream(&mut termfix_pending, &[], &mut context)
-                        .map_err(|_| std::io::Error::last_os_error())?;
-                if !transformed.is_empty() {
-                    let filtered =
-                        strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
-                    push_with_command_markers(
-                        &mut context,
-                        &mut pending,
-                        &filtered,
-                        &mut seen_prompt_start,
-                    );
-                }
+        if !clear_filter_pending.is_empty() {
+            let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &[]);
+            if !filtered.is_empty() {
+                push_with_command_markers(
+                    &mut context,
+                    &mut pending,
+                    &filtered,
+                    &mut seen_prompt_start,
+                );
             }
-            if !clear_filter_pending.is_empty() {
-                let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &[]);
-                if !filtered.is_empty() {
-                    push_with_command_markers(
-                        &mut context,
-                        &mut pending,
-                        &filtered,
-                        &mut seen_prompt_start,
-                    );
-                }
-            }
-            if !pending.is_empty() {
-                context.push(&pending);
-            }
+        }
+        if !pending.is_empty() {
+            context.push(&pending);
         }
 
         Ok(())
-    });
+    }());
 
     let input_thread = thread::spawn(move || -> io::Result<()> {
         let mut stdin = io::stdin();
@@ -318,10 +330,12 @@ pub fn shell(
 
     let status = child.wait()?;
 
-    match output_thread.join() {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => eprintln!("Error reading from PTY: {e}"),
-        Err(_) => eprintln!("Output thread panicked"),
+    match tokio::try_join!(output_thread) {
+        // Ok(Ok(())) => {}
+        // Ok(Err(e)) => eprintln!("Error reading from PTY: {e}"),
+        // Err(_) => eprintln!("Output thread panicked"),
+        Ok(_) => {}
+        Err(e) => eprintln!("Error on thread: {}", e),
     }
 
     // The input thread can still be blocked on stdin. Detach by dropping it.

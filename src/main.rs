@@ -6,11 +6,9 @@ use anyhow::anyhow;
 use crossterm::terminal::size;
 use libghostty_vt::Terminal;
 use libghostty_vt::TerminalOptions;
-use std::env::args;
-use std::os;
 use std::process::exit;
 use std::sync::Arc;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use crate::context::ShellContext;
 
@@ -31,11 +29,14 @@ pub enum Commands {
     Start,
     Status,
     Context,
+    Fix,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     //TODO the main fn should be responsible for setting up env vars, loading configs
     //and making a buffer for the context for the LLM.
+    dotenv::dotenv()?;
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Start {}) => {}
@@ -45,6 +46,11 @@ fn main() -> Result<()> {
             exit(0)
         }
         Some(Commands::Context) => {
+            println!("Termfix is inactive, no available context.");
+            println!("Use \"termfix start\" to activate");
+            exit(0);
+        }
+        Some(Commands::Fix) => {
             println!("Termfix is inactive, no available context.");
             println!("Use \"termfix start\" to activate");
             exit(0);
@@ -59,7 +65,7 @@ fn main() -> Result<()> {
     let context_arc = Arc::new(Mutex::new(context));
     let (cols, rows) = size().unwrap_or((80, 24));
 
-    pty::shell(rows, cols, &std::env::var("SHELL")?, context_arc.clone())?;
+    pty::shell(rows, cols, &std::env::var("SHELL")?, context_arc.clone()).await?;
 
     //To parse ansi escape sequences, we need to emulate the whole shell session again...
     let mut terminal = Terminal::new(TerminalOptions {
@@ -68,13 +74,7 @@ fn main() -> Result<()> {
         max_scrollback: 10_000,
     })?;
 
-    let out = parser::parse(
-        context_arc
-            .lock()
-            .map_err(|_| anyhow!("couldn't get the lock"))?
-            .get_raw_context(),
-        &mut terminal,
-    )?;
+    let out = parser::parse(context_arc.lock().await.get_raw_context(), &mut terminal)?;
     std::fs::write("./logs/clean.log", out)?;
     Ok(())
 }

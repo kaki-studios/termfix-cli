@@ -8,7 +8,9 @@ anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
 crossterm = "0.29.0"
 portable-pty = "0.9.0"
-tokio = "1.52.1"
+tokio = { version = "1.52.1", features = ["full"] }
 libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs" }
 # have to use 0.28.0 bc that's what portable-pty uses
 nix = { version = "0.28.0", features = ["term"] }
+dotenv = { version = "0.15.0", features = ["clap"] }
+reqwest = { version = "0.13.3", features = ["json"] }
