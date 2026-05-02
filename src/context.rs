@@ -1,7 +1,3 @@
-use anyhow::Result;
-use anyhow::anyhow;
-use std::string;
-
 ///A struct that holds context from the shell (their outputs, can't get input, see pty.rs)
 pub struct ShellContext {
     raw_context: Vec<u8>,

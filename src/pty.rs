@@ -6,7 +6,7 @@ use clap::Parser;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use libghostty_vt::{Terminal, TerminalOptions};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::{env, thread};
 use tokio::sync::Mutex;
@@ -14,14 +14,54 @@ use tokio::sync::Mutex;
 use crate::Commands;
 use crate::context::ShellContext;
 struct RawModeGuard;
-const PROMPT_START_SEQ: &[u8] = b"\x1b]7;";
-const COMMAND_END_MARKER: &[u8] = b"\n-----COMMAND END------\n";
 const CUSTOM_COMMAND_BOOTSTRAP: &[u8] =
-    b"termfix() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\nclear\n";
+    b"termfix() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\n";
+const OSC_133_BOOTSTRAP: &[u8] = b"\n\
+_termfix_append_prompt_markers() {\n\
+  local bmark=$'%{\\e]133;B\\a%}'\n\
+  case \"${PROMPT-}\" in\n\
+    *$'\\e]133;B'*) ;;\n\
+    *) PROMPT=\"${PROMPT}${bmark}\" ;;\n\
+  esac\n\
+}\n\
+_termfix_precmd() {\n\
+  printf '\\033]133;D;%s\\a\\033]133;A\\a' \"$?\"\n\
+  _termfix_append_prompt_markers\n\
+}\n\
+_termfix_preexec() { printf '\\033]133;C\\a'; }\n\
+if [ -n \"${ZSH_VERSION:-}\" ]; then\n\
+  autoload -Uz add-zsh-hook 2>/dev/null\n\
+  add-zsh-hook precmd _termfix_precmd\n\
+  add-zsh-hook preexec _termfix_preexec\n\
+fi\nclear\n";
 
 #[derive(Deserialize)]
 struct Response {
     message: String,
+}
+
+#[derive(Serialize)]
+struct CommandOutput {
+    command: String,
+    output: String,
+}
+
+fn normalize_for_tty(bytes: Vec<u8>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len() + 16);
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'\n' {
+            if i == 0 || bytes[i - 1] != b'\r' {
+                out.push(b'\r');
+            }
+            out.push(b'\n');
+            i += 1;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    out
 }
 
 impl RawModeGuard {
@@ -34,37 +74,6 @@ impl RawModeGuard {
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-    }
-}
-
-fn push_with_command_markers(
-    context: &mut ShellContext,
-    pending: &mut Vec<u8>,
-    chunk: &[u8],
-    seen_prompt_start: &mut bool,
-) {
-    pending.extend_from_slice(chunk);
-    let mut out = Vec::with_capacity(chunk.len() + 64);
-    let mut i = 0usize;
-
-    while i + PROMPT_START_SEQ.len() <= pending.len() {
-        if &pending[i..i + PROMPT_START_SEQ.len()] == PROMPT_START_SEQ {
-            if *seen_prompt_start {
-                out.extend_from_slice(COMMAND_END_MARKER);
-            } else {
-                *seen_prompt_start = true;
-            }
-            out.extend_from_slice(PROMPT_START_SEQ);
-            i += PROMPT_START_SEQ.len();
-        } else {
-            out.push(pending[i]);
-            i += 1;
-        }
-    }
-
-    if i > 0 {
-        context.push(&out);
-        pending.drain(0..i);
     }
 }
 
@@ -126,8 +135,13 @@ async fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Re
     let mut vec = vec![env::args().into_iter().next().unwrap_or("".to_string())];
     vec.extend(command.split_whitespace().map(|e| e.to_string()));
 
-    //TODO don't exit if arg not present, otherwise termfix exits the pty, check clap docs
-    let cli = crate::Cli::parse_from(vec);
+    // Never abort the PTY on CLI parse errors; surface help/error text in-shell.
+    let cli = match crate::Cli::try_parse_from(vec) {
+        Ok(cli) => cli,
+        Err(e) => {
+            return Ok(normalize_for_tty(format!("{e}\n").into_bytes()));
+        }
+    };
     // return format!("{:?}", command.split_whitespace()).bytes().collect();
     match &cli.command {
         Some(Commands::Start {}) => Ok(b"already active\r\n".to_vec()),
@@ -141,9 +155,17 @@ async fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Re
                 max_scrollback: 10_000,
             })?;
 
-            let out = parser::parse(context.get_raw_context(), &mut terminal)?;
-            std::fs::write("./logs/clean.log", out)?;
-            Ok(b"Logs written to logs/clean.log\r\n".to_vec())
+            // let out = parser::parse(context.get_raw_context(), &mut terminal)?;
+            // std::fs::write("./logs/clean.log", out)?;
+            let out = parser::parse_vec(context.get_raw_context(), &mut terminal)?;
+            let payload: Vec<CommandOutput> = out
+                .into_iter()
+                .map(|(command, output)| CommandOutput { command, output })
+                .collect();
+            let res = serde_json::to_string(&payload)?;
+            std::fs::write("./logs/clean.json", &res)?;
+            // Ok(b"Logs written to logs/clean.json\r\n".to_vec())
+            Ok(normalize_for_tty(res.into_bytes()))
         }
         Some(Commands::Fix) => {
             let out = {
@@ -154,21 +176,27 @@ async fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Re
                     rows,
                     max_scrollback: 10_000,
                 })?;
-                parser::parse(context.get_raw_context(), &mut terminal)?
+                parser::parse_vec(context.get_raw_context(), &mut terminal)?
             };
+            let payload: Vec<CommandOutput> = out
+                .into_iter()
+                .map(|(command, output)| CommandOutput { command, output })
+                .collect();
             let client = reqwest::Client::new();
             //TODO display some text while processing request, check tokio docs + use tokio timeout
             let resp = client
                 //TODO if no url is present, this hangs
                 .post(format!("{}/api/fix", std::env::var("TERMFIX_API_URL")?))
-                .body(format!("{{\"{}\"}}", out))
+                .json(&payload)
                 .header("Authorization", std::env::var("KEY")?)
                 .send()
                 .await?;
 
-            Ok(resp.json::<Response>().await?.message.into_bytes())
+            Ok(normalize_for_tty(
+                resp.json::<Response>().await?.message.into_bytes(),
+            ))
         }
-        None => Ok(b"Error\r\n".to_vec()),
+        None => Ok(normalize_for_tty(b"Error\n".to_vec())),
     }
 }
 
@@ -206,7 +234,14 @@ async fn process_termfix_commands_stream(
             let body = &pending[seq_start + 2..end_idx];
             if let Some(command) = body.strip_prefix(b"1337;TERMFIX_CMD=") {
                 let command = String::from_utf8_lossy(command);
-                out.extend_from_slice(&handle_termfix_command(&command, context).await?);
+                match handle_termfix_command(&command, context).await {
+                    Ok(bytes) => out.extend_from_slice(&bytes),
+                    Err(e) => {
+                        out.extend_from_slice(&normalize_for_tty(
+                            format!("termfix error: {e}\n").into_bytes(),
+                        ));
+                    }
+                }
             } else {
                 out.extend_from_slice(&pending[seq_start..end_idx + term_len]);
             }
@@ -251,6 +286,7 @@ pub async fn shell(
     // Register built-in termfix commands in the spawned shell session.
     // This keeps them behaving like normal shell commands inside the PTY.
     writer.write_all(CUSTOM_COMMAND_BOOTSTRAP)?;
+    writer.write_all(OSC_133_BOOTSTRAP)?;
     writer.flush()?;
 
     let _raw_mode = RawModeGuard::new()?;
@@ -261,8 +297,6 @@ pub async fn shell(
         let mut buffer = [0u8; 4096];
         let mut termfix_pending = Vec::new();
         let mut clear_filter_pending = Vec::new();
-        let mut pending = Vec::new();
-        let mut seen_prompt_start = false;
 
         loop {
             let n = reader.read(&mut buffer)?;
@@ -275,12 +309,7 @@ pub async fn shell(
                 process_termfix_commands_stream(&mut termfix_pending, &buffer[..n], &mut context)
                     .await?;
             let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
-            push_with_command_markers(
-                &mut context,
-                &mut pending,
-                &filtered,
-                &mut seen_prompt_start,
-            );
+            context.push(&filtered);
             stdout.write_all(&transformed)?;
             stdout.flush()?;
         }
@@ -294,27 +323,14 @@ pub async fn shell(
             if !transformed.is_empty() {
                 let filtered =
                     strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
-                push_with_command_markers(
-                    &mut context,
-                    &mut pending,
-                    &filtered,
-                    &mut seen_prompt_start,
-                );
+                context.push(&filtered);
             }
         }
         if !clear_filter_pending.is_empty() {
             let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &[]);
             if !filtered.is_empty() {
-                push_with_command_markers(
-                    &mut context,
-                    &mut pending,
-                    &filtered,
-                    &mut seen_prompt_start,
-                );
+                context.push(&filtered);
             }
-        }
-        if !pending.is_empty() {
-            context.push(&pending);
         }
 
         Ok(())
@@ -339,12 +355,12 @@ pub async fn shell(
 
     let status = child.wait()?;
 
-    match tokio::try_join!(output_thread) {
-        // Ok(Ok(())) => {}
-        // Ok(Err(e)) => eprintln!("Error reading from PTY: {e}"),
-        // Err(_) => eprintln!("Output thread panicked"),
-        Ok(_) => {}
-        Err(e) => eprintln!("Error on thread: {}", e),
+    match output_thread.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => eprintln!("Error reading from PTY: {e}"),
+        Err(_) => eprintln!("Output thread panicked"),
+        // Ok(_) => {}
+        // Err(e) => eprintln!("Error on thread: {}", e),
     }
 
     // The input thread can still be blocked on stdin. Detach by dropping it.
