@@ -140,14 +140,16 @@ async fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Re
             Ok(b"Logs written to logs/clean.log\r\n".to_vec())
         }
         Some(Commands::Fix) => {
-            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-            //To parse ansi escape sequences, we need to emulate the whole shell session again...
-            let mut terminal = Terminal::new(TerminalOptions {
-                cols,
-                rows,
-                max_scrollback: 10_000,
-            })?;
-            let out = parser::parse(context.get_raw_context(), &mut terminal)?;
+            let out = {
+                let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+                //To parse ansi escape sequences, we need to emulate the whole shell session again...
+                let mut terminal = Terminal::new(TerminalOptions {
+                    cols,
+                    rows,
+                    max_scrollback: 10_000,
+                })?;
+                parser::parse(context.get_raw_context(), &mut terminal)?
+            };
             let client = reqwest::Client::new();
             let resp = client
                 .post(format!("{}/api/fix", std::env::var("TERMFIX_API_URL")?))
@@ -246,7 +248,7 @@ pub async fn shell(
     let _raw_mode = RawModeGuard::new()?;
     let copied_ctx = Arc::clone(&shell_ctx);
 
-    let output_thread = tokio::spawn(async move || -> io::Result<()> {
+    let output_thread = tokio::spawn(async move {
         let mut stdout = io::stdout();
         let mut buffer = [0u8; 4096];
         let mut termfix_pending = Vec::new();
@@ -309,7 +311,7 @@ pub async fn shell(
         }
 
         Ok(())
-    }());
+    });
 
     let input_thread = thread::spawn(move || -> io::Result<()> {
         let mut stdin = io::stdin();
