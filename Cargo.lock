@@ -1637,6 +1637,7 @@ dependencies = [
  "nix",
  "portable-pty",
  "reqwest",
+ "serde",
  "tokio",
 ]
 

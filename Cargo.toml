@@ -14,3 +14,4 @@ libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs" }
 nix = { version = "0.28.0", features = ["term"] }
 dotenv = { version = "0.15.0", features = ["clap"] }
 reqwest = { version = "0.13.3", features = ["json"] }
+serde = { version = "1.0.228", features = ["derive"] }

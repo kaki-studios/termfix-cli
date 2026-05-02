@@ -6,6 +6,7 @@ use clap::Parser;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use libghostty_vt::{Terminal, TerminalOptions};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use serde::Deserialize;
 use std::io::{self, Read, Write};
 use std::{env, thread};
 use tokio::sync::Mutex;
@@ -17,6 +18,11 @@ const PROMPT_START_SEQ: &[u8] = b"\x1b]7;";
 const COMMAND_END_MARKER: &[u8] = b"\n-----COMMAND END------\n";
 const CUSTOM_COMMAND_BOOTSTRAP: &[u8] =
     b"termfix() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\nclear\n";
+
+#[derive(Deserialize)]
+struct Response {
+    message: String,
+}
 
 impl RawModeGuard {
     fn new() -> io::Result<Self> {
@@ -151,14 +157,16 @@ async fn handle_termfix_command(command: &str, context: &mut ShellContext) -> Re
                 parser::parse(context.get_raw_context(), &mut terminal)?
             };
             let client = reqwest::Client::new();
+            //TODO display some text while processing request, check tokio docs + use tokio timeout
             let resp = client
+                //TODO if no url is present, this hangs
                 .post(format!("{}/api/fix", std::env::var("TERMFIX_API_URL")?))
                 .body(format!("{{\"{}\"}}", out))
                 .header("Authorization", std::env::var("KEY")?)
                 .send()
                 .await?;
 
-            Ok(resp.bytes().await?.into())
+            Ok(resp.json::<Response>().await?.message.into_bytes())
         }
         None => Ok(b"Error\r\n".to_vec()),
     }
@@ -248,7 +256,7 @@ pub async fn shell(
     let _raw_mode = RawModeGuard::new()?;
     let copied_ctx = Arc::clone(&shell_ctx);
 
-    let output_thread = tokio::spawn(async move {
+    let output_thread: tokio::task::JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
         let mut stdout = io::stdout();
         let mut buffer = [0u8; 4096];
         let mut termfix_pending = Vec::new();
@@ -265,8 +273,7 @@ pub async fn shell(
             let mut context = copied_ctx.lock().await;
             let transformed =
                 process_termfix_commands_stream(&mut termfix_pending, &buffer[..n], &mut context)
-                    .await
-                    .map_err(|_| std::io::Error::last_os_error())?;
+                    .await?;
             let filtered = strip_clear_sequences_stream(&mut clear_filter_pending, &transformed);
             push_with_command_markers(
                 &mut context,

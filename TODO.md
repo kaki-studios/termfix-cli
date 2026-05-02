@@ -7,3 +7,6 @@
 
 QOL
 - [ ] Parse terminal output while pty is running, speeds up waiting time 
+
+Late stage improvements
+- [ ] Open source the cli but migrate the parsing logic to the api to keep the moat.
