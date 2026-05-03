@@ -4,7 +4,8 @@
 - [ ] Move runtime parsing logic away from pty.rs
 - [X] Send output to api and make `termfix fix` work etc.
     - [X] Parse terminal output on command
-- [ ] Streaming responses, timeout etc. for the api
+- [X] Streaming responses, timeout etc. for the api
+    - [ ] The streamed responses get added to the command, no the output
 
 QOL
 - [ ] Parse terminal output while pty is running, speeds up waiting time 

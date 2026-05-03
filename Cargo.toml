@@ -13,6 +13,7 @@ libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs" }
 # have to use 0.28.0 bc that's what portable-pty uses
 nix = { version = "0.28.0", features = ["term"] }
 dotenv = { version = "0.15.0", features = ["clap"] }
-reqwest = { version = "0.13.3", features = ["json"] }
+reqwest = { version = "0.13.3", features = ["json", "stream"] }
+futures-util = "0.3.31"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

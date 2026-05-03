@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use crate::context::ShellContext;
 
 mod context;
+mod helpers;
 mod parser;
 mod pty;
 use clap::{Parser, Subcommand};
