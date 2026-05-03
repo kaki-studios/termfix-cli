@@ -196,6 +196,12 @@ pub async fn handle_termfix_command(
                 .send()
                 .await?;
 
+            // Ensure streamed bytes are categorized as command output by OSC 133 parser.
+            let force_output_region = b"\x1b]133;C\x07".to_vec();
+            stdout.write_all(&force_output_region)?;
+            stdout.flush()?;
+            shell_ctx.lock().await.push(&force_output_region);
+
             let mut stream = resp.bytes_stream();
             loop {
                 let next_chunk = timeout(Duration::from_secs(15), stream.next()).await;
