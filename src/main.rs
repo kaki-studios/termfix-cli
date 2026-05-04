@@ -1,6 +1,7 @@
 //! Spawn an interactive shell using `portable_pty` and bridge bytes between
 //! the local terminal and the child PTY.
 
+use crate::helpers::CommandOutput;
 use anyhow::Result;
 use crossterm::terminal::size;
 use libghostty_vt::Terminal;
@@ -12,17 +13,12 @@ use tokio::sync::Mutex;
 use crate::context::ShellContext;
 
 mod context;
+mod fix;
 mod helpers;
 mod parser;
 mod pty;
+use crate::fix::Count;
 use clap::{Parser, Subcommand};
-use serde::Serialize;
-
-#[derive(Serialize)]
-struct CommandOutput {
-    command: String,
-    output: String,
-}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -38,13 +34,21 @@ pub enum Commands {
     Start,
     Status,
     Context,
-    Fix,
+    Fix {
+        #[arg(short, long)]
+        message: Option<String>,
+
+        #[arg(long, conflicts_with = "count")]
+        all: bool,
+
+        #[arg(short, long, conflicts_with = "all")]
+        count: Option<u32>,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    //TODO the main fn should be responsible for setting up env vars, loading configs
-    //and making a buffer for the context for the LLM.
+    //TODO config
     dotenv::dotenv()?;
     let cli = Cli::parse();
     match &cli.command {
@@ -59,7 +63,11 @@ async fn main() -> Result<()> {
             println!("Use \"termfix start\" to activate");
             exit(0);
         }
-        Some(Commands::Fix) => {
+        Some(Commands::Fix {
+            message: _,
+            count: _,
+            all: _,
+        }) => {
             println!("Termfix is inactive, no available context.");
             println!("Use \"termfix start\" to activate");
             exit(0);

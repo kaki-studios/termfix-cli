@@ -2,22 +2,23 @@
 ///handling in the pty.
 use crate::Commands;
 use crate::context::ShellContext;
+use crate::fix::Count;
 use crate::parser;
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use futures_util::StreamExt;
 use libghostty_vt::{Terminal, TerminalOptions};
 use serde::Serialize;
 use std::env;
 use std::io::{self, Write};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::{Duration, timeout};
 
+//Basically black magic but escapes the input properly and adds a custom prefix that we'll detect in
+//runtime. This is for the `termfix` command in runtime.
 pub const CUSTOM_COMMAND_BOOTSTRAP: &[u8] =
-    b"termfix() { printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$1\"; }\n";
+    b"termfix() { local __termfix_cmd; __termfix_cmd=$(printf '%q ' \"$@\"); __termfix_cmd=${__termfix_cmd% }; printf '\\033]1337;TERMFIX_CMD=%s\\a' \"$__termfix_cmd\"; }\n";
+//This is to add osc133 sequences to the right places to know command boundaries.
 pub const OSC_133_BOOTSTRAP: &[u8] = b"\n\
 _termfix_append_prompt_markers() {\n\
   local bmark=$'%{\\e]133;B\\a%}'\n\
@@ -52,7 +53,7 @@ impl Drop for RawModeGuard {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct CommandOutput {
     pub command: String,
     pub output: String,
@@ -139,7 +140,7 @@ pub fn strip_clear_sequences_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<
     out
 }
 
-fn build_payload_from_raw_context(raw_context: Vec<u8>) -> Result<Vec<CommandOutput>> {
+pub fn build_payload_from_raw_context(raw_context: Vec<u8>) -> Result<Vec<CommandOutput>> {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let mut terminal = Terminal::new(TerminalOptions {
         cols,
@@ -160,19 +161,19 @@ pub async fn handle_termfix_command(
     stdout: &mut io::Stdout,
 ) -> Result<CommandExecution> {
     //points to current executable, prob just should do ""
-    let mut vec = vec![env::args().into_iter().next().unwrap_or("".to_string())];
-    vec.extend(command.split_whitespace().map(|e| e.to_string()));
+    let mut args = vec![env::args().into_iter().next().unwrap_or("".to_string())];
+    let parsed_args = match shell_words::split(command) {
+        Ok(args) => args,
+        Err(e) => return Err(anyhow!("{}", e.to_string())),
+    };
+    args.extend(parsed_args);
 
     // Never abort the PTY on CLI parse errors; surface help/error text in-shell.
-    let cli = match crate::Cli::try_parse_from(vec) {
+    let cli = match crate::Cli::try_parse_from(args) {
         Ok(cli) => cli,
-        Err(e) => {
-            return Ok(CommandExecution::Buffered(normalize_for_tty(
-                format!("{e}\n").into_bytes(),
-            )));
-        }
+        Err(e) => return Err(anyhow!("{}", e.to_string())),
     };
-    // return format!("{:?}", command.split_whitespace()).bytes().collect();
+
     match &cli.command {
         Some(Commands::Start {}) => Ok(CommandExecution::Buffered(b"already active\r\n".to_vec())),
         Some(Commands::Status {}) => Ok(CommandExecution::Buffered(b"active\r\n".to_vec())),
@@ -185,47 +186,18 @@ pub async fn handle_termfix_command(
                 format!("{}\r\n", res).into_bytes(),
             )))
         }
-        Some(Commands::Fix) => {
-            let raw = shell_ctx.lock().await.get_raw_context();
-            let payload = build_payload_from_raw_context(raw)?;
-            let client = reqwest::Client::new();
-            let resp = client
-                .post(format!("{}/api/fix", std::env::var("TERMFIX_API_URL")?))
-                .json(&payload)
-                .header("Authorization", format!("Bearer {}", std::env::var("KEY")?))
-                .send()
-                .await?;
-
-            // Ensure streamed bytes are categorized as command output by OSC 133 parser.
-            let force_output_region = b"\x1b]133;C\x07".to_vec();
-            stdout.write_all(&force_output_region)?;
-            stdout.flush()?;
-            shell_ctx.lock().await.push(&force_output_region);
-
-            let mut stream = resp.bytes_stream();
-            loop {
-                let next_chunk = timeout(Duration::from_secs(15), stream.next()).await;
-                let chunk = match next_chunk {
-                    Ok(Some(Ok(chunk))) => chunk,
-                    Ok(Some(Err(e))) => return Err(anyhow!("stream read error: {e}")),
-                    Ok(None) => break,
-                    Err(_) => {
-                        let msg = normalize_for_tty(
-                            b"\ntermfix error: stream timed out after 15s idle\n".to_vec(),
-                        );
-                        stdout.write_all(&msg)?;
-                        stdout.flush()?;
-                        shell_ctx.lock().await.push(&msg);
-                        return Ok(CommandExecution::Streamed);
-                    }
-                };
-
-                let normalized = normalize_for_tty(chunk.to_vec());
-                stdout.write_all(&normalized)?;
-                stdout.flush()?;
-                shell_ctx.lock().await.push(&normalized);
-            }
-
+        Some(Commands::Fix {
+            message,
+            all,
+            count,
+        }) => {
+            //FIXME doesn't work, always returns, Count::All
+            let countenum = match (all, count) {
+                (true, _) => Count::All,
+                (false, Some(n)) => Count::Number(n.clone()),
+                (false, None) => Count::All,
+            };
+            crate::fix::fix(shell_ctx, stdout, message.clone(), countenum).await?;
             Ok(CommandExecution::Streamed)
         }
         None => Ok(CommandExecution::Buffered(normalize_for_tty(
