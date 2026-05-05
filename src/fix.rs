@@ -1,7 +1,7 @@
 ///This file is just for functionality related to the `termfix fix` command
 use anyhow::anyhow;
 use futures_util::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::io::{self, Write};
 use std::num::ParseIntError;
@@ -15,6 +15,16 @@ use tokio::sync::Mutex;
 
 use crate::context::ShellContext;
 use crate::helpers::*;
+
+#[derive(Deserialize)]
+struct Config {
+    api_key: String,
+}
+
+#[cfg(debug_assertions)]
+const TERMFIX_API_URL: &str = "http://localhost:3000";
+#[cfg(not(debug_assertions))]
+const TERMFIX_API_URL: &str = "https://termfix.kaki.foo";
 
 #[derive(Serialize, Debug)]
 struct FixPayload {
@@ -66,12 +76,16 @@ pub async fn fix(
         commands: commands,
         message: message,
     };
+    let config_home =
+        std::env::var("XDG_CONFIG_HOME").unwrap_or(format!("{}/.config", std::env::var("HOME")?));
+    let file = std::fs::read_to_string(format!("{}/termfix/config.toml", config_home))?;
+    let config: Config = toml::from_str(&file)?;
 
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{}/api/fix", std::env::var("TERMFIX_API_URL")?))
+        .post(format!("{}/api/fix", TERMFIX_API_URL))
         .json(&payload)
-        .header("Authorization", format!("Bearer {}", std::env::var("KEY")?))
+        .header("Authorization", format!("Bearer {}", config.api_key))
         .send()
         .await?;
 

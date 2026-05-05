@@ -49,7 +49,10 @@ pub enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     //TODO config
-    dotenv::dotenv()?;
+    let config_home =
+        std::env::var("XDG_CONFIG_HOME").unwrap_or(format!("{}/.config", std::env::var("HOME")?));
+    std::fs::create_dir_all(format!("{}/termfix", config_home))?;
+
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Start {}) => {}
