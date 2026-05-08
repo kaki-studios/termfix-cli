@@ -6,7 +6,10 @@
     - [X] Parse terminal output on command
 - [X] Streaming responses, timeout etc. for the api
     - [X] The streamed responses get added to the command, no the output
-- [ ] Add config file for api keys, and hardcode termfix url in release builds
+- [X] Add config file for api keys, and hardcode termfix url in release builds
+- [ ] gh actions/gh releases
+- [ ] custom instruction (personal info, eg distro etc.)
+- [ ] installer
 
 QOL
 - [ ] Parse terminal output while pty is running, speeds up waiting time 
