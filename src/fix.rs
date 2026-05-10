@@ -19,6 +19,7 @@ use crate::helpers::*;
 #[derive(Deserialize)]
 struct Config {
     api_key: String,
+    custom_instructions: Option<String>,
 }
 
 #[cfg(debug_assertions)]
@@ -28,6 +29,7 @@ const TERMFIX_API_URL: &str = "https://termfix.kaki.foo";
 
 #[derive(Serialize, Debug)]
 struct FixPayload {
+    custom_instructions: Option<String>,
     commands: Vec<CommandOutput>,
     message: Option<String>,
 }
@@ -72,14 +74,16 @@ pub async fn fix(
             (&all_commands[start..]).to_vec()
         }
     };
-    let payload = FixPayload {
-        commands: commands,
-        message: message,
-    };
     let config_home =
         std::env::var("XDG_CONFIG_HOME").unwrap_or(format!("{}/.config", std::env::var("HOME")?));
     let file = std::fs::read_to_string(format!("{}/termfix/config.toml", config_home))?;
     let config: Config = toml::from_str(&file)?;
+
+    let payload = FixPayload {
+        custom_instructions: config.custom_instructions,
+        commands: commands,
+        message: message,
+    };
 
     let client = reqwest::Client::new();
     let resp = client
