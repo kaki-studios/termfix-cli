@@ -16,8 +16,8 @@ pub async fn shell(
 ) -> anyhow::Result<()> {
     let pty_system = NativePtySystem::default();
     let pair = pty_system.openpty(PtySize {
-        rows: rows,
-        cols: cols,
+        rows,
+        cols,
         pixel_width: 0,
         pixel_height: 0,
     })?;

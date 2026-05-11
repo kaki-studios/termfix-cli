@@ -48,6 +48,8 @@ pub enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     //TODO config
     let config_home =
         std::env::var("XDG_CONFIG_HOME").unwrap_or(format!("{}/.config", std::env::var("HOME")?));
@@ -55,8 +57,8 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     match &cli.command {
-        Some(Commands::Start {}) => {}
-        Some(Commands::Status {}) => {
+        Some(Commands::Start) => {}
+        Some(Commands::Status) => {
             println!("inactive");
             println!("Use \"termfix start\" to activate");
             exit(0)

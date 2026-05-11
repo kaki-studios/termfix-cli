@@ -54,7 +54,7 @@ impl FromStr for Count {
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
             "all" => Ok(Count::All),
-            other => u32::from_str(other).map(|n| Count::Number(n)),
+            other => u32::from_str(other).map(Count::Number),
         }
     }
 }
@@ -71,7 +71,7 @@ pub async fn fix(
         Count::All => all_commands,
         Count::Number(n) => {
             let start = all_commands.len().saturating_sub(n as usize);
-            (&all_commands[start..]).to_vec()
+            all_commands[start..].to_vec()
         }
     };
     let config_home =
@@ -81,8 +81,8 @@ pub async fn fix(
 
     let payload = FixPayload {
         custom_instructions: config.custom_instructions,
-        commands: commands,
-        message: message,
+        commands,
+        message,
     };
 
     let client = reqwest::Client::new();

@@ -10,7 +10,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use libghostty_vt::{Terminal, TerminalOptions};
 use serde::Serialize;
 use std::env;
-use std::io::{self, Write};
+use std::io;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -161,22 +161,22 @@ pub async fn handle_termfix_command(
     stdout: &mut io::Stdout,
 ) -> Result<CommandExecution> {
     //points to current executable, prob just should do ""
-    let mut args = vec![env::args().into_iter().next().unwrap_or("".to_string())];
+    let mut args = vec![env::args().next().unwrap_or("".to_string())];
     let parsed_args = match shell_words::split(command) {
         Ok(args) => args,
-        Err(e) => return Err(anyhow!("{}", e.to_string())),
+        Err(e) => return Err(anyhow!("{e}")),
     };
     args.extend(parsed_args);
 
     // Never abort the PTY on CLI parse errors; surface help/error text in-shell.
     let cli = match crate::Cli::try_parse_from(args) {
         Ok(cli) => cli,
-        Err(e) => return Err(anyhow!("{}", e.to_string())),
+        Err(e) => return Err(anyhow!("{e}")),
     };
 
     match &cli.command {
-        Some(Commands::Start {}) => Ok(CommandExecution::Buffered(b"already active\r\n".to_vec())),
-        Some(Commands::Status {}) => Ok(CommandExecution::Buffered(b"active\r\n".to_vec())),
+        Some(Commands::Start) => Ok(CommandExecution::Buffered(b"already active\r\n".to_vec())),
+        Some(Commands::Status) => Ok(CommandExecution::Buffered(b"active\r\n".to_vec())),
         Some(Commands::Context) => {
             let raw = shell_ctx.lock().await.get_raw_context();
             let payload = build_payload_from_raw_context(raw)?;
@@ -194,7 +194,7 @@ pub async fn handle_termfix_command(
             //FIXME doesn't work, always returns, Count::All
             let countenum = match (all, count) {
                 (true, _) => Count::All,
-                (false, Some(n)) => Count::Number(n.clone()),
+                (false, Some(n)) => Count::Number(*n),
                 (false, None) => Count::All,
             };
             crate::fix::fix(shell_ctx, stdout, message.clone(), countenum).await?;
