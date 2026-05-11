@@ -9,8 +9,8 @@
 - [X] Add config file for api keys, and hardcode termfix url in release builds
 - [ ] gh actions/gh releases
 - [ ] move away from the bootstrap, users should add it to their .zshrc/.bashrc
-- [ ] custom instructions (personal info, eg distro etc.)
-- [ ] installer
+- [X] custom instructions (personal info, eg distro etc.)
+- [X] installer (in the termfix project, not here)
 
 QOL
 - [ ] Parse terminal output while pty is running, speeds up waiting time 
