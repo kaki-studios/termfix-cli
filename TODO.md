@@ -7,8 +7,10 @@
 - [X] Streaming responses, timeout etc. for the api
     - [X] The streamed responses get added to the command, no the output
 - [X] Add config file for api keys, and hardcode termfix url in release builds
-- [ ] gh actions/gh releases
+- [X] gh actions/gh releases
+    - [X] provide .tar.gz by release, each containing a "termfix" binary
 - [ ] move away from the bootstrap, users should add it to their .zshrc/.bashrc or do it in the install script
+    - [ ] support multiple shells, install script should add bootstraps to each shell.
 - [X] custom instructions (personal info, eg distro etc.)
 - [X] installer (in the termfix project, not here)
 

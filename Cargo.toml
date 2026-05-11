@@ -9,7 +9,7 @@ clap = { version = "4.6.1", features = ["derive"] }
 crossterm = "0.29.0"
 portable-pty = "0.9.0"
 tokio = { version = "1.52.1", features = ["full"] }
-libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs" }
+libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs", features = ["link-static"] }
 # have to use 0.28.0 bc that's what portable-pty uses
 nix = { version = "0.28.0", features = ["term"] }
 reqwest = { version = "0.13.3", default-features = false, features = ["charset", "http2", "json", "rustls-no-provider", "stream", "system-proxy"] }

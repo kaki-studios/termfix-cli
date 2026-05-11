@@ -30,7 +30,7 @@ jobs:
             rust_target: aarch64-apple-darwin
             artifact_name: termfix-macos-arm64
           - id: macos-x86_64
-            runner: macos-latest
+            runner: macos-26-intel
             rust_target: x86_64-apple-darwin
             artifact_name: termfix-macos-x86_64
 
@@ -49,17 +49,33 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.rust_target }}
 
+      - name: Verify libghostty is statically linked
+        shell: bash
+        run: |
+          binary="target/${{ matrix.rust_target }}/release/termfix"
+          if [[ "${{ matrix.runner }}" == macos-* ]]; then
+            deps="$(otool -L "$binary")"
+          else
+            deps="$(ldd "$binary" 2>&1 || true)"
+          fi
+
+          echo "$deps"
+          if echo "$deps" | grep -i ghostty; then
+            echo "termfix still links a dynamic libghostty artifact" >&2
+            exit 1
+          fi
+
       - name: Rename binary for upload
         shell: bash
         run: |
-          mkdir -p dist
-          cp "target/${{ matrix.rust_target }}/release/termfix" "dist/${{ matrix.artifact_name }}"
+          mkdir -p "dist/${{ matrix.artifact_name }}"
+          cp "target/${{ matrix.rust_target }}/release/termfix" "dist/${{ matrix.artifact_name }}/termfix"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}/termfix
 
   release:
     name: Publish Release Assets
@@ -92,7 +108,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-assets
-          find dist -maxdepth 2 -type f -exec cp {} release-assets/ \;
+          for dir in dist/*; do
+            name="$(basename "$dir")"
+            tar -C dist -czf "release-assets/${name}.tar.gz" "$name"
+          done
           ls -la release-assets
 
       - name: Create or update GitHub release
