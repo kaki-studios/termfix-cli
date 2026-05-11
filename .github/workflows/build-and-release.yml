@@ -17,7 +17,6 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       RUST_TARGET: ${{ matrix.rust_target }}
-      AWS_LC_SYS_NO_ASM: ${{ matrix.aws_lc_sys_no_asm }}
     strategy:
       fail-fast: false
       matrix:
@@ -26,17 +25,14 @@ jobs:
             runner: ubuntu-latest
             rust_target: x86_64-unknown-linux-gnu
             artifact_name: termfix-linux-x86_64
-            aws_lc_sys_no_asm: "0"
           - id: macos-arm64
             runner: macos-latest
             rust_target: aarch64-apple-darwin
             artifact_name: termfix-macos-arm64
-            aws_lc_sys_no_asm: "1"
           - id: macos-x86_64
             runner: macos-latest
             rust_target: x86_64-apple-darwin
             artifact_name: termfix-macos-x86_64
-            aws_lc_sys_no_asm: "1"
 
     steps:
       - name: Checkout
