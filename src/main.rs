@@ -50,10 +50,9 @@ pub enum Commands {
 async fn main() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    //TODO config
     let config_home =
         std::env::var("XDG_CONFIG_HOME").unwrap_or(format!("{}/.config", std::env::var("HOME")?));
-    std::fs::create_dir_all(format!("{}/termfix", config_home))?;
+    std::fs::create_dir_all(format!("{}/termfix/logs", config_home))?;
 
     let cli = Cli::parse();
     match &cli.command {
@@ -104,6 +103,7 @@ async fn main() -> Result<()> {
         .map(|(command, output)| CommandOutput { command, output })
         .collect();
     let res = serde_json::to_string(&payload)?;
-    std::fs::write("./logs/clean.json", res)?;
+
+    std::fs::write(format!("{}/termfix/logs/clean.json", config_home), res)?;
     Ok(())
 }
