@@ -1,0 +1,95 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Prepare artifact name
+        id: artifact
+        shell: bash
+        run: |
+          arch="$(uname -m)"
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            echo "name=termfix-linux-${arch}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=termfix-macos-${arch}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rename binary for upload
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/termfix "dist/${{ steps.artifact.outputs.name }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: dist/${{ steps.artifact.outputs.name }}
+
+  release:
+    name: Publish Release Assets
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Cargo.toml version
+        id: version
+        shell: bash
+        run: |
+          version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')"
+          if [[ -z "$version" ]]; then
+            echo "Failed to read version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifact directories
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find dist -maxdepth 2 -type f -exec cp {} release-assets/ \;
+          ls -la release-assets
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body: Automated build from main branch for version `${{ steps.version.outputs.version }}`.
+          files: release-assets/*
