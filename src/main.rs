@@ -3,11 +3,13 @@
 
 use crate::helpers::CommandOutput;
 use anyhow::Result;
+use anyhow::anyhow;
 use chrono::DateTime;
 use chrono::Utc;
 use crossterm::terminal::size;
 use libghostty_vt::Terminal;
 use libghostty_vt::TerminalOptions;
+use std::fmt::format;
 use std::process::exit;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -52,9 +54,16 @@ pub enum Commands {
 async fn main() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let config_home =
-        std::env::var("XDG_CONFIG_HOME").unwrap_or(format!("{}/.config", std::env::var("HOME")?));
-    std::fs::create_dir_all(format!("{}/termfix/logs", config_home))?;
+    let termfix_home = format!(
+        "{}/.termfix",
+        std::env::home_dir()
+            .ok_or(anyhow!("Couldn't access home directory"))?
+            .to_str()
+            .ok_or(anyhow!(
+                "Couldn't convert home directoy PathBuf to a string"
+            ))?
+    );
+    std::fs::create_dir_all(format!("{}/logs", termfix_home))?;
 
     let cli = Cli::parse();
     match &cli.command {
@@ -108,7 +117,7 @@ async fn main() -> Result<()> {
 
     let dt: DateTime<Utc> = std::time::SystemTime::now().into();
     std::fs::write(
-        format!("{}/termfix/logs/{}.json", config_home, dt.format("%+")),
+        format!("{}/logs/{}.json", termfix_home, dt.format("%+")),
         res,
     )?;
     Ok(())

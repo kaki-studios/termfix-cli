@@ -74,9 +74,21 @@ pub async fn fix(
             all_commands[start..].to_vec()
         }
     };
-    let config_home =
-        std::env::var("XDG_CONFIG_HOME").unwrap_or(format!("{}/.config", std::env::var("HOME")?));
-    let file = std::fs::read_to_string(format!("{}/termfix/config.toml", config_home))?;
+
+    let termfix_home = format!(
+        "{}/.termfix",
+        std::env::home_dir()
+            .ok_or(anyhow!("Couldn't access home directory"))?
+            .to_str()
+            .ok_or(anyhow!(
+                "Couldn't convert home directoy PathBuf to a string"
+            ))?
+    );
+    let file = std::fs::read_to_string(format!("{}/config.toml", termfix_home)).map_err(|_| {
+        anyhow!(
+            "Missing config file. Make sure ~/.termfix/config.toml exists and is well-configured"
+        )
+    })?;
     let config: Config = toml::from_str(&file)?;
 
     let payload = FixPayload {
