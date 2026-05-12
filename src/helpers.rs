@@ -181,7 +181,6 @@ pub async fn handle_termfix_command(
             let raw = shell_ctx.lock().await.get_raw_context();
             let payload = build_payload_from_raw_context(raw)?;
             let res = serde_json::to_string(&payload)?;
-            std::fs::write("./logs/clean.json", &res)?;
             Ok(CommandExecution::Buffered(normalize_for_tty(
                 format!("{}\r\n", res).into_bytes(),
             )))

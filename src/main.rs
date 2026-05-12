@@ -3,6 +3,8 @@
 
 use crate::helpers::CommandOutput;
 use anyhow::Result;
+use chrono::DateTime;
+use chrono::Utc;
 use crossterm::terminal::size;
 use libghostty_vt::Terminal;
 use libghostty_vt::TerminalOptions;
@@ -104,6 +106,10 @@ async fn main() -> Result<()> {
         .collect();
     let res = serde_json::to_string(&payload)?;
 
-    std::fs::write(format!("{}/termfix/logs/clean.json", config_home), res)?;
+    let dt: DateTime<Utc> = std::time::SystemTime::now().into();
+    std::fs::write(
+        format!("{}/termfix/logs/{}.json", config_home, dt.format("%+")),
+        res,
+    )?;
     Ok(())
 }
