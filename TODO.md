@@ -1,3 +1,4 @@
+# TODO
 - [X] Capture commands and their outputs
     - [X] Document the pipeline
 - [X] Implement the termfix command
@@ -9,10 +10,16 @@
 - [X] Add config file for api keys, and hardcode termfix url in release builds
 - [X] gh actions/gh releases
     - [X] provide .tar.gz by release, each containing a "termfix" binary
-- [ ] move away from the bootstrap, users should add it to their .zshrc/.bashrc or do it in the install script
-    - [ ] support multiple shells, install script should add bootstraps to each shell.
 - [X] custom instructions (personal info, eg distro etc.)
 - [X] installer (in the termfix project, not here)
 
-QOL
+### QOL
 - [ ] Parse terminal output while pty is running, speeds up waiting time 
+- [ ] move away from the bootstrap, users should add it to their .zshrc/.bashrc or do it in the install script
+    - [ ] support multiple shells, install script should add bootstraps to each shell.
+
+### Late-stage
+- [ ] Upload parsed context to the cloud like bashhub (see below)
+
+### Notes
+[bashhub](https://bashhub.com) is doing something similar, and it's open source

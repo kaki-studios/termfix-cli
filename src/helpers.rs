@@ -190,7 +190,6 @@ pub async fn handle_termfix_command(
             all,
             count,
         }) => {
-            //FIXME doesn't work, always returns, Count::All
             let countenum = match (all, count) {
                 (true, _) => Count::All,
                 (false, Some(n)) => Count::Number(*n),
