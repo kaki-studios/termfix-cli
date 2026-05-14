@@ -4,7 +4,7 @@ The cli is a pty that behaves completely like the normal terminal, except it rec
 It then stores that as a buffer that's send to the backend for termfix responses
 
 ## Install (macOS/Linux)
-Installation from [termfix](https://termfix.kaki.foo)
+Installation from [termfix](https://termfix.dev)
 
 ## How it works:
 1. Start a pty with portable-pty
