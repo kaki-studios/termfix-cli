@@ -43,6 +43,23 @@ jobs:
         with:
           version: 0.15.2
 
+      - name: Force portable libghostty target
+        shell: bash
+        run: |
+          cargo fetch --target ${{ matrix.rust_target }}
+          build_rs="$(find "${CARGO_HOME:-$HOME/.cargo}/git/checkouts" -path '*/crates/libghostty-vt-sys/build.rs' | head -n 1)"
+          if [[ -z "$build_rs" ]]; then
+            echo "Could not find libghostty-vt-sys build.rs" >&2
+            exit 1
+          fi
+
+          # libghostty-vt-sys normally omits -Dtarget for native builds, which
+          # lets Zig tune compiler-rt symbols like memcpy for the CI runner CPU.
+          # Always passing -Dtarget makes release artifacts use baseline target
+          # features instead of AVX-512 or other runner-specific instructions.
+          sed -i.bak 's/if target != host {/if target == host || target != host {/' "$build_rs"
+          grep -n 'target == host || target != host' "$build_rs"
+
       - name: Add Rust target
         run: rustup target add ${{ matrix.rust_target }}
 
@@ -62,6 +79,17 @@ jobs:
           echo "$deps"
           if echo "$deps" | grep -i ghostty; then
             echo "termfix still links a dynamic libghostty artifact" >&2
+            exit 1
+          fi
+
+      - name: Verify Linux memcpy is portable
+        if: startsWith(matrix.id, 'linux-')
+        shell: bash
+        run: |
+          binary="target/${{ matrix.rust_target }}/release/termfix"
+          memcpy="$(objdump -d -M intel "$binary" | awk '/<memcpy>:/,/^$/')"
+          if echo "$memcpy" | grep -E '\bzmm|%zmm|\bk[0-7]\b'; then
+            echo "memcpy contains AVX-512 instructions; release binary is not portable" >&2
             exit 1
           fi
 
@@ -110,6 +138,7 @@ jobs:
           mkdir -p release-assets
           for dir in dist/*; do
             name="$(basename "$dir")"
+            chmod +x "$dir/termfix"
             tar -C dist -czf "release-assets/${name}.tar.gz" "$name"
           done
           ls -la release-assets
