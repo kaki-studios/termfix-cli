@@ -25,7 +25,7 @@ struct Config {
 #[cfg(debug_assertions)]
 const TERMFIX_API_URL: &str = "http://localhost:3000";
 #[cfg(not(debug_assertions))]
-const TERMFIX_API_URL: &str = "https://termfix.kaki.foo";
+const TERMFIX_API_URL: &str = "https://termfix.dev";
 
 #[derive(Serialize, Debug)]
 struct FixPayload {
@@ -103,7 +103,8 @@ pub async fn fix(
         .json(&payload)
         .header("Authorization", format!("Bearer {}", config.api_key))
         .send()
-        .await?;
+        .await
+        .map_err(|e| anyhow!("error:{e}"))?;
 
     // Ensure streamed bytes are categorized as command output by OSC 133 parser.
     let force_output_region = b"\x1b]133;C\x07".to_vec();

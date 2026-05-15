@@ -9,7 +9,6 @@ use chrono::Utc;
 use crossterm::terminal::size;
 use libghostty_vt::Terminal;
 use libghostty_vt::TerminalOptions;
-use std::fmt::format;
 use std::process::exit;
 use std::sync::Arc;
 use tokio::sync::Mutex;
