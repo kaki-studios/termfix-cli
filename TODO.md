@@ -12,7 +12,7 @@
     - [X] provide .tar.gz by release, each containing a "termfix" binary
 - [X] custom instructions (personal info, eg distro etc.)
 - [X] installer (in the termfix project, not here)
-- [ ] Better readme with actual documentation
+- [X] Better readme with actual documentation
 
 ### QOL
 - [ ] Parse terminal output while pty is running, speeds up waiting time 
