@@ -193,7 +193,7 @@ pub async fn handle_termfix_command(
             let countenum = match (all, count) {
                 (true, _) => Count::All,
                 (false, Some(n)) => Count::Number(*n),
-                (false, None) => Count::All,
+                (false, None) => Count::Number(1),
             };
             crate::fix::fix(shell_ctx, stdout, message.clone(), countenum).await?;
             Ok(CommandExecution::Streamed)
