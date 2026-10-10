@@ -8,7 +8,6 @@ use chrono::DateTime;
 use chrono::Utc;
 use crossterm::terminal::size;
 use libghostty_vt::Terminal;
-use libghostty_vt::TerminalOptions;
 use std::process::exit;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -99,11 +98,7 @@ async fn main() -> Result<()> {
     pty::shell(rows, cols, &std::env::var("SHELL")?, context_arc.clone()).await?;
 
     //To parse ansi escape sequences, we need to emulate the whole shell session again...
-    let mut terminal = Terminal::new(TerminalOptions {
-        cols,
-        rows,
-        max_scrollback: 10_000,
-    })?;
+    let mut terminal = Terminal::new(cols, rows)?;
 
     // let out = parser::parse(context_arc.lock().await.get_raw_context(), &mut terminal)?;
     // std::fs::write("./logs/clean.log", out)?;

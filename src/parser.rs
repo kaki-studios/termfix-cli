@@ -1,7 +1,6 @@
 use anyhow::Result;
 use libghostty_vt::Terminal;
 use libghostty_vt::fmt::{Format, Formatter, FormatterOptions};
-use libghostty_vt::TerminalOptions;
 
 fn strip_legacy_title_sequences(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
@@ -35,12 +34,10 @@ pub fn parse(input: Vec<u8>, terminal: &mut Terminal) -> Result<String> {
 
     let mut formatter = Formatter::new(
         terminal,
-        FormatterOptions {
-            format: Format::Plain,
-            trim: true,
-            unwrap: true,
-            selection: None,
-        },
+        FormatterOptions::new()
+            .with_format(Format::Plain)
+            .with_trim(true)
+            .with_unwrap(true),
     )?;
     let out = formatter.format_alloc(None)?;
     Ok(String::from_utf8_lossy(&out).into_owned())
@@ -103,16 +100,8 @@ pub fn parse_vec(input: Vec<u8>, _terminal: &mut Terminal) -> Result<Vec<(String
                     b'D' => {
                         if !command_region.is_empty() || !output_region.is_empty() {
                             let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-                            let mut command_terminal = Terminal::new(TerminalOptions {
-                                cols,
-                                rows,
-                                max_scrollback: 1_000,
-                            })?;
-                            let mut output_terminal = Terminal::new(TerminalOptions {
-                                cols,
-                                rows,
-                                max_scrollback: 10_000,
-                            })?;
+                            let mut command_terminal = Terminal::new(cols, rows)?;
+                            let mut output_terminal = Terminal::new(cols, rows)?;
 
                             let command = render_segment(&command_region, &mut command_terminal)?
                                 .trim()

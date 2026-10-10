@@ -7,7 +7,7 @@ use crate::parser;
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use libghostty_vt::{Terminal, TerminalOptions};
+use libghostty_vt::Terminal;
 use serde::Serialize;
 use std::env;
 use std::io;
@@ -142,11 +142,7 @@ pub fn strip_clear_sequences_stream(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<
 
 pub fn build_payload_from_raw_context(raw_context: Vec<u8>) -> Result<Vec<CommandOutput>> {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let mut terminal = Terminal::new(TerminalOptions {
-        cols,
-        rows,
-        max_scrollback: 10_000,
-    })?;
+    let mut terminal = Terminal::new(cols, rows)?;
 
     let out = parser::parse_vec(raw_context, &mut terminal)?;
     Ok(out
